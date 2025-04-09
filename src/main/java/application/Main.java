@@ -1,29 +1,38 @@
 package application;
 
-import javafx.animation.KeyFrame;
-import javafx.animation.Timeline;
+
+import application.ui.DecoratedPane;
+import application.ui.ImagePane;
+import application.ui.MainPane;
+import application.ui.VideoPane;
+import application.utils.HeatMapVideo;
+import application.utils.MainButton;
+import application.utils.TextUtils;
 import javafx.application.Application;
-import javafx.stage.Stage;
+import javafx.geometry.Rectangle2D;
+import javafx.scene.Cursor;
+import javafx.scene.Parent;
 import javafx.scene.Scene;
-import javafx.scene.canvas.Canvas;
-import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.image.Image;
-import javafx.scene.layout.StackPane;
+import javafx.scene.layout.BorderPane;
 import javafx.scene.paint.Color;
-import javafx.stage.FileChooser;
-import javafx.util.Duration;
-import com.google.gson.Gson;
-import java.io.File;
-import java.io.FileReader;
-import java.io.IOException;
-import java.util.List;
+import javafx.stage.Screen;
+import javafx.stage.Stage;
+import javafx.stage.StageStyle;
 
 public class Main extends Application {
-    private Canvas canvas;
-    private GraphicsContext gc;
-    private Image backgroundImage;
-    private List<DataPoint> dataPoints;
-    private int currentIndex = 0;
+
+    TextUtils textUtils;
+    MainButton mainButton;
+    HeatMapVideo heatMapVideo;
+
+    public DecoratedPane decoratedPane;
+    public ImagePane imagePane;
+    public VideoPane videoPane;
+    public MainPane mainPane;
+
+    public int width = 600;
+    public int height = 300;
 
     public static void main(String[] args) {
         launch(args);
@@ -31,93 +40,49 @@ public class Main extends Application {
 
     @Override
     public void start(Stage primaryStage) {
-        canvas = new Canvas(1800, 1000);
-        gc = canvas.getGraphicsContext2D();
-        StackPane root = new StackPane(canvas);
-        Scene scene = new Scene(root);
+        primaryStage.setWidth(this.width);
+        primaryStage.setHeight(this.height);
+        primaryStage.setTitle("GazePlayTools");
+        primaryStage.setResizable(false);
 
-        primaryStage.setTitle("Trace Viewer");
+        textUtils = new TextUtils();
+        mainButton = new MainButton();
+        heatMapVideo = new HeatMapVideo(primaryStage);
+
+        decoratedPane = new DecoratedPane(this, primaryStage);
+        imagePane = new ImagePane(this, primaryStage, textUtils, mainButton);
+        videoPane = new VideoPane(this, primaryStage, textUtils, mainButton, heatMapVideo);
+        mainPane = new MainPane(this, primaryStage, textUtils, mainButton);
+
+        decoratedPane.setCenter(mainPane);
+
+        Scene scene = new Scene(decoratedPane, primaryStage.getWidth(), primaryStage.getHeight());
+        scene.getStylesheets().add("style.css");
+        scene.setFill(Color.TRANSPARENT);
+
         primaryStage.setScene(scene);
+        primaryStage.initStyle(StageStyle.TRANSPARENT);
         primaryStage.show();
 
-        openFileChooser(primaryStage);
+        this.loadMainPane(primaryStage);
     }
 
-    private void openFileChooser(Stage stage) {
-        FileChooser fileChooser = new FileChooser();
-        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("JSON Files", "*.json"));
-        File jsonFile = fileChooser.showOpenDialog(stage);
-        if (jsonFile != null) {
-            loadJSONData(jsonFile);
-
-            fileChooser.getExtensionFilters().set(0, new FileChooser.ExtensionFilter("Image Files", "*.png", "*.jpg", "*.jpeg"));
-            File imageFile = fileChooser.showOpenDialog(stage);
-            if (imageFile != null) {
-                loadImage(imageFile);
-            }
-        }
+    public void loadMainPane(Stage primaryStage) {
+        Rectangle2D primaryScreenBounds = Screen.getPrimary().getVisualBounds();
+        primaryStage.setFullScreen(false);
+        primaryStage.getScene().setRoot(decoratedPane);
+        primaryStage.setX((primaryScreenBounds.getWidth() - this.width)/2);
+        primaryStage.setY((primaryScreenBounds.getHeight() - this.height)/2);
+        primaryStage.getScene().setCursor(Cursor.DEFAULT);
     }
 
-    private void loadJSONData(File file) {
-        try (FileReader reader = new FileReader(file)) {
-            Gson gson = new Gson();
-            FixationData fixationData = gson.fromJson(reader, FixationData.class);
-            if (fixationData.fixationSequence != null && !fixationData.fixationSequence.isEmpty()) {
-                dataPoints = fixationData.fixationSequence.get(0); // Prend la première séquence
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+    public void backToMainPane(Stage primaryStage){
+        decoratedPane.setCenter(mainPane);
+        primaryStage.getScene().setCursor(Cursor.DEFAULT);
     }
 
-    private void loadImage(File file) {
-        backgroundImage = new Image(file.toURI().toString());
-        gc.drawImage(backgroundImage, 0, 0, canvas.getWidth(), canvas.getHeight());
-        startAnimation();
-    }
-
-    private void startAnimation() {
-        if (dataPoints == null || dataPoints.size() < 2) return;
-        currentIndex = 1;
-        playNextStep();
-    }
-
-    private void playNextStep() {
-        if (currentIndex >= dataPoints.size()) return;
-
-        DataPoint p1 = dataPoints.get(currentIndex - 1);
-        DataPoint p2 = dataPoints.get(currentIndex);
-        double delay = p2.timeGaze - p1.timeGaze; // Différence en millisecondes
-
-        Timeline step = new Timeline(new KeyFrame(Duration.millis(delay), e -> {
-            drawStep(p1, p2);
-            playNextStep();
-        }));
-        step.setCycleCount(1);
-        step.play();
-    }
-
-    private void drawStep(DataPoint p1, DataPoint p2) {
-
-        /*if (backgroundImage != null) {
-            gc.drawImage(backgroundImage, 0, 0, canvas.getWidth(), canvas.getHeight());
-        }*/
-
-        gc.setStroke(Color.RED);
-        gc.setLineWidth(5);
-        System.out.println("Dessiner ligne de (" + p1.x + ", " + p1.y + ") à (" + p2.x + ", " + p2.y + ")");
-        gc.strokeLine(p1.y, p1.x, p2.y, p2.x);
-
-        currentIndex++;
-    }
-
-    static class FixationData {
-        List<List<DataPoint>> fixationSequence;
-    }
-
-    static class DataPoint {
-        long timeGaze;
-        int x;
-        int y;
+    public void goTo(Stage primaryStage, Parent pane){
+        decoratedPane.setCenter(pane);
+        primaryStage.getScene().setCursor(Cursor.DEFAULT);
     }
 }
